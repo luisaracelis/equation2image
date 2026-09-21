@@ -4,8 +4,434 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Equation Image — parameter playground</title>
+  <style>
+    :root {
+      --bg: #1c1916;
+      --panel: #2a2622;
+      --paper: #e4ddd4;
+      --ink: #2a2622;
+      --muted: #9a9086;
+      --line: #4a433c;
+      --accent: #c4a574;
+      --moss: #6b8f6a;
+      --clay: #c4785a;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: var(--bg); color: var(--paper); font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif; }
+    body { display: grid; grid-template-columns: 320px 1fr; min-height: 100vh; }
+    aside {
+      background: var(--panel);
+      border-right: 1px solid var(--line);
+      padding: 22px 20px 28px;
+      display: flex; flex-direction: column; gap: 18px;
+      overflow-y: auto;
+    }
+    h1 { font-size: 15px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 600; color: var(--accent); }
+    .tag { font-size: 11px; color: var(--muted); line-height: 1.45; }
+    label.mode {
+      display: block; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px;
+    }
+    select, button {
+      width: 100%; background: #1c1916; color: var(--paper); border: 1px solid var(--line);
+      padding: 9px 10px; border-radius: 6px; font: inherit; font-size: 13px;
+    }
+    button { cursor: pointer; }
+    button:hover { border-color: var(--accent); color: var(--accent); }
+    .eq {
+      font-family: "IBM Plex Serif", Georgia, serif;
+      font-size: 13.5px; line-height: 1.55; color: #f0e9df;
+      background: #1c1916; border: 1px solid var(--line); border-radius: 8px;
+      padding: 12px 12px 10px;
+    }
+    .eq .sym { color: var(--accent); }
+    .sliders { display: flex; flex-direction: column; gap: 16px; }
+    .slider-row { display: flex; flex-direction: column; gap: 6px; }
+    .slider-row header { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+    .slider-row header strong { color: var(--paper); font-variant-numeric: tabular-nums; font-weight: 500; }
+    input[type=range] { width: 100%; accent-color: var(--accent); }
+    .hint { font-size: 12px; color: var(--muted); line-height: 1.5; }
+    main { position: relative; display: grid; place-items: center; padding: 24px; }
+    canvas { max-width: 100%; max-height: calc(100vh - 48px); background: #12100e; border-radius: 10px; box-shadow: 0 20px 50px rgba(0,0,0,.4); }
+    @media (max-width: 800px) {
+      body { grid-template-columns: 1fr; }
+      aside { border-right: none; border-bottom: 1px solid var(--line); }
+    }
+  </style>
 </head>
 <body>
-<p>placeholder</p>
+  <aside>
+    <div>
+      <h1>Equation → image</h1>
+      <p class="tag">Change one or two numbers. The picture is the equation.</p>
+    </div>
+
+    <div>
+      <label class="mode" for="mode">Family</label>
+      <select id="mode">
+        <option value="phyllotaxis" selected>Phyllotaxis — angle & pack</option>
+        <option value="chladni">Chladni plate — m & n</option>
+        <option value="spiro">Spirograph — r & d</option>
+        <option value="tree">Fractal tree — angle & ratio</option>
+        <option value="julia">Julia set — Re(c) & Im(c)</option>
+        <option value="logistic">Period doubling — r (logistic map)</option>
+        <option value="rose">Polar rose — k & a</option>
+        <option value="lissajous">Lissajous — a & b</option>
+      </select>
+    </div>
+
+    <div class="eq" id="eq"></div>
+    <div class="sliders" id="sliders"></div>
+    <p class="hint" id="hint"></p>
+    <button id="rand">Randomize parameters</button>
+  </aside>
+  <main>
+    <canvas id="c" width="900" height="900"></canvas>
+  </main>
+
+  <script>
+    const canvas = document.getElementById("c");
+    const ctx = canvas.getContext("2d");
+    const W = canvas.width, H = canvas.height;
+
+    const families = {
+      tree: {
+        eq: `branch(L, θ) draws two children:<br>
+          L′ = <span class="sym">r</span> · L<br>
+          θ′ = θ ± <span class="sym">α</span>`,
+        hint: "α is the fork angle. r is how much each generation shrinks. Near r ≈ 0.7 and α ≈ 0.4–0.7 the canopy fills.",
+        params: [
+          { key: "alpha", label: "α  fork angle", min: 0.08, max: 1.35, step: 0.01, value: 0.48 },
+          { key: "ratio", label: "r  length ratio", min: 0.45, max: 0.82, step: 0.005, value: 0.68 }
+        ],
+        draw(p) { drawTree(p.alpha, p.ratio); }
+      },
+      julia: {
+        eq: `z<sub>n+1</sub> = z<sub>n</sub><sup>2</sup> + c<br>
+          c = <span class="sym">a</span> + <span class="sym">b</span> i`,
+        hint: "Every (a, b) is a different Julia set. Connected shapes sit over the Mandelbrot set; dust lives outside it.",
+        params: [
+          { key: "a", label: "a  Re(c)", min: -1.2, max: 0.6, step: 0.005, value: -0.8 },
+          { key: "b", label: "b  Im(c)", min: -1.0, max: 1.0, step: 0.005, value: 0.156 }
+        ],
+        draw(p) { drawJulia(p.a, p.b); }
+      },
+      logistic: {
+        eq: `x<sub>n+1</sub> = <span class="sym">r</span> · x<sub>n</sub> · (1 − x<sub>n</sub>)<br>
+          plot attractor vs. r  (onset → fork → cascade → haze)`,
+        hint: "One slider. r ≈ 3 forks, then 3.45, 3.54… cascade. Chaos after ≈ 3.57. This is the Cascade instrument.",
+        params: [
+          { key: "rMax", label: "r  upper edge", min: 2.8, max: 4.0, step: 0.005, value: 4.0 },
+          { key: "rMin", label: "r  lower edge", min: 2.4, max: 3.6, step: 0.005, value: 2.5 }
+        ],
+        draw(p) { drawBifurcation(Math.min(p.rMin, p.rMax), Math.max(p.rMin, p.rMax)); }
+      },
+      spiro: {
+        eq: `hypotrochoid (fixed ring R = 1)<br>
+          x = (1−<span class="sym">r</span>) cos t + <span class="sym">d</span> cos((1−r)/r · t)<br>
+          y = (1−<span class="sym">r</span>) sin t − <span class="sym">d</span> sin((1−r)/r · t)`,
+        hint: "r is the rolling-wheel radius. d is how far the pen sits from that wheel’s center. Near-rational r makes a short lace; irrational r never quite closes.",
+        params: [
+          { key: "r", label: "r  wheel radius", min: 0.12, max: 0.72, step: 0.002, value: 0.333 },
+          { key: "d", label: "d  pen offset", min: 0.15, max: 1.15, step: 0.005, value: 0.55 }
+        ],
+        draw(p) { drawSpiro(p.r, p.d); }
+      },
+      phyllotaxis: {
+        eq: `seed n sits at<br>
+          ρ = <span class="sym">c</span> √n<br>
+          θ = n · <span class="sym">δ</span>`,
+        hint: "δ ≈ 137.5° is the golden divergence — sunflower packing. Nudge it and the spiral families slip (parastichy jump). c is how tightly the disc fills.",
+        params: [
+          { key: "delta", label: "δ  divergence °", min: 120, max: 160, step: 0.05, value: 137.5 },
+          { key: "c", label: "c  packing", min: 6, max: 16, step: 0.1, value: 10.5 }
+        ],
+        draw(p) { drawPhyllotaxis(p.delta, p.c); }
+      },
+      chladni: {
+        eq: `square plate nodes<br>
+          cos(<span class="sym">n</span>πx) cos(<span class="sym">m</span>πy) − cos(<span class="sym">m</span>πx) cos(<span class="sym">n</span>πy) ≈ 0`,
+        hint: "m and n are vibration modes. Equal numbers give a simple grid; nearby integers weave diagonals and stars — sand lines on a ringing plate.",
+        params: [
+          { key: "m", label: "m  mode", min: 1, max: 8, step: 1, value: 3 },
+          { key: "n", label: "n  mode", min: 1, max: 8, step: 1, value: 5 }
+        ],
+        draw(p) { drawChladni(p.m, p.n); }
+      },
+      rose: {
+        eq: `r(θ) = <span class="sym">a</span> · cos(<span class="sym">k</span> θ)`,
+        hint: "Integer k → k petals if odd, 2k if even. Non-integer k weaves a denser rosette.",
+        params: [
+          { key: "k", label: "k  frequency", min: 1, max: 11, step: 0.05, value: 4 },
+          { key: "a", label: "a  amplitude", min: 0.35, max: 1, step: 0.01, value: 0.92 }
+        ],
+        draw(p) { drawRose(p.k, p.a); }
+      },
+      lissajous: {
+        eq: `x = sin(<span class="sym">a</span> t)<br>
+          y = sin(<span class="sym">b</span> t)`,
+        hint: "Integer ratios close. Close-but-not-quite ratios fill a cloth. a:b = 3:2 is a classic figure-eight family.",
+        params: [
+          { key: "a", label: "a  x-frequency", min: 1, max: 8, step: 0.02, value: 3 },
+          { key: "b", label: "b  y-frequency", min: 1, max: 8, step: 0.02, value: 2 }
+        ],
+        draw(p) { drawLissajous(p.a, p.b); }
+      }
+    };
+
+    const state = { mode: "phyllotaxis", values: {} };
+
+    function currentFamily() { return families[state.mode]; }
+
+    function renderUI() {
+      const f = currentFamily();
+      document.getElementById("eq").innerHTML = f.eq;
+      document.getElementById("hint").textContent = f.hint;
+      const wrap = document.getElementById("sliders");
+      wrap.innerHTML = "";
+      f.params.forEach(param => {
+        if (state.values[param.key] === undefined) state.values[param.key] = param.value;
+        const row = document.createElement("div");
+        row.className = "slider-row";
+        row.innerHTML = `<header><span>${param.label}</span><strong data-k="${param.key}"></strong></header>
+          <input type="range" min="${param.min}" max="${param.max}" step="${param.step}" value="${state.values[param.key]}" data-k="${param.key}">`;
+        wrap.appendChild(row);
+      });
+      wrap.querySelectorAll("input").forEach(inp => {
+        inp.addEventListener("input", () => {
+          state.values[inp.dataset.k] = parseFloat(inp.value);
+          paint();
+        });
+      });
+      paint();
+    }
+
+    function fmt(n) {
+      return Number.isInteger(n) ? String(n) : n.toFixed(3).replace(/0+$/,"").replace(/\.$/,"");
+    }
+
+    function paint() {
+      const f = currentFamily();
+      f.params.forEach(p => {
+        const el = document.querySelector(`strong[data-k="${p.key}"]`);
+        if (el) el.textContent = fmt(state.values[p.key]);
+      });
+      f.draw(state.values);
+    }
+
+    function clear(color = "#12100e") {
+      ctx.fillStyle = color;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    function drawTree(alpha, ratio) {
+      clear("#141210");
+      ctx.strokeStyle = "#d7c4a3";
+      ctx.lineCap = "round";
+      const maxDepth = 12;
+      function branch(x, y, len, ang, depth) {
+        if (depth > maxDepth || len < 1.4) return;
+        const x2 = x + Math.cos(ang) * len;
+        const y2 = y + Math.sin(ang) * len;
+        ctx.globalAlpha = 0.18 + 0.7 * (1 - depth / maxDepth);
+        ctx.lineWidth = Math.max(0.4, 7 * Math.pow(ratio, depth));
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+        branch(x2, y2, len * ratio, ang - alpha, depth + 1);
+        branch(x2, y2, len * ratio, ang + alpha, depth + 1);
+      }
+      branch(W / 2, H - 36, 168, -Math.PI / 2, 0);
+      ctx.globalAlpha = 1;
+    }
+
+    function drawJulia(a, b) {
+      const img = ctx.createImageData(W, H);
+      const data = img.data;
+      const scale = 3.0 / W;
+      const cx = W / 2, cy = H / 2;
+      const maxIt = 80;
+      for (let py = 0; py < H; py++) {
+        for (let px = 0; px < W; px++) {
+          let zr = (px - cx) * scale;
+          let zi = (py - cy) * scale;
+          let n = 0;
+          while (n < maxIt && zr * zr + zi * zi < 4) {
+            const tr = zr * zr - zi * zi + a;
+            zi = 2 * zr * zi + b;
+            zr = tr;
+            n++;
+          }
+          const i = (py * W + px) * 4;
+          if (n === maxIt) {
+            data[i] = 18; data[i+1] = 16; data[i+2] = 14; data[i+3] = 255;
+          } else {
+            const t = n / maxIt;
+            data[i]   = 40 + t * 180;
+            data[i+1] = 50 + t * 140;
+            data[i+2] = 55 + (1 - t) * 80;
+            data[i+3] = 255;
+          }
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+    }
+
+    function drawBifurcation(rMin, rMax) {
+      clear("#12100e");
+      const img = ctx.createImageData(W, H);
+      const data = img.data;
+      const cols = W;
+      const iters = 220;
+      const drop = 80;
+      for (let col = 0; col < cols; col++) {
+        const r = rMin + (rMax - rMin) * (col / cols);
+        let x = 0.5;
+        for (let i = 0; i < drop; i++) x = r * x * (1 - x);
+        for (let i = 0; i < iters; i++) {
+          x = r * x * (1 - x);
+          const py = Math.floor((1 - x) * (H - 20) + 10);
+          if (py < 0 || py >= H) continue;
+          const i4 = (py * W + col) * 4;
+          data[i4]   = Math.min(255, data[i4] + 28);
+          data[i4+1] = Math.min(255, data[i4+1] + 22);
+          data[i4+2] = Math.min(255, data[i4+2] + 14);
+          data[i4+3] = 255;
+        }
+      }
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i+3] === 0) {
+          data[i] = 18; data[i+1] = 16; data[i+2] = 14; data[i+3] = 255;
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+    }
+
+    function drawRose(k, a) {
+      clear("#141210");
+      ctx.beginPath();
+      const steps = 2400;
+      const R = Math.min(W, H) * 0.42;
+      for (let i = 0; i <= steps; i++) {
+        const th = (i / steps) * Math.PI * 12;
+        const r = a * Math.cos(k * th) * R;
+        const x = W / 2 + r * Math.cos(th);
+        const y = H / 2 + r * Math.sin(th);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = "#e2c9a0";
+      ctx.lineWidth = 1.15;
+      ctx.globalAlpha = 0.9;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    function drawSpiro(r, d) {
+      clear("#141210");
+      const R = 1;
+      const scale = Math.min(W, H) * 0.38;
+      const k = (R - r) / r;
+      const turns = 48;
+      const steps = 9000;
+      ctx.beginPath();
+      for (let i = 0; i <= steps; i++) {
+        const t = (i / steps) * Math.PI * 2 * turns;
+        const x = (R - r) * Math.cos(t) + d * Math.cos(k * t);
+        const y = (R - r) * Math.sin(t) - d * Math.sin(k * t);
+        const px = W / 2 + x * scale;
+        const py = H / 2 + y * scale;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.strokeStyle = "#e4cba6";
+      ctx.lineWidth = 1.05;
+      ctx.globalAlpha = 0.88;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    function drawPhyllotaxis(deltaDeg, c) {
+      clear("#141210");
+      const golden = deltaDeg * Math.PI / 180;
+      const count = 900;
+      const cx = W / 2, cy = H / 2;
+      for (let n = 0; n < count; n++) {
+        const rho = c * Math.sqrt(n);
+        const th = n * golden;
+        const x = cx + rho * Math.cos(th);
+        const y = cy + rho * Math.sin(th);
+        const rad = 2.1 + 1.4 * (n / count);
+        ctx.beginPath();
+        ctx.arc(x, y, rad, 0, Math.PI * 2);
+        const t = n / count;
+        ctx.fillStyle = `rgba(${210 + t * 30}, ${180 - t * 40}, ${140 - t * 30}, 0.92)`;
+        ctx.fill();
+      }
+    }
+
+    function drawChladni(m, n) {
+      const img = ctx.createImageData(W, H);
+      const data = img.data;
+      const margin = 48;
+      const inner = W - margin * 2;
+      for (let py = 0; py < H; py++) {
+        for (let px = 0; px < W; px++) {
+          const i = (py * W + px) * 4;
+          const inPlate = px >= margin && px < W - margin && py >= margin && py < H - margin;
+          if (!inPlate) {
+            data[i] = 16; data[i+1] = 14; data[i+2] = 12; data[i+3] = 255;
+            continue;
+          }
+          const x = (px - margin) / inner;
+          const y = (py - margin) / inner;
+          const f = Math.cos(n * Math.PI * x) * Math.cos(m * Math.PI * y)
+                  - Math.cos(m * Math.PI * x) * Math.cos(n * Math.PI * y);
+          const node = Math.exp(-Math.abs(f) * 14);
+          const g = 22 + node * 210;
+          const r = 28 + node * 200;
+          const b = 20 + node * 150;
+          data[i] = r; data[i+1] = g; data[i+2] = b; data[i+3] = 255;
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+    }
+
+    function drawLissajous(a, b) {
+      clear("#141210");
+      ctx.beginPath();
+      const steps = 4000;
+      const Rx = W * 0.38, Ry = H * 0.38;
+      const delta = Math.PI / 4;
+      for (let i = 0; i <= steps; i++) {
+        const t = (i / steps) * Math.PI * 2 * 8;
+        const x = W / 2 + Rx * Math.sin(a * t + delta);
+        const y = H / 2 + Ry * Math.sin(b * t);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = "#d8c4a6";
+      ctx.lineWidth = 1.1;
+      ctx.stroke();
+    }
+
+    document.getElementById("mode").addEventListener("change", (e) => {
+      state.mode = e.target.value;
+      state.values = {};
+      renderUI();
+    });
+
+    document.getElementById("rand").addEventListener("click", () => {
+      const f = currentFamily();
+      f.params.forEach(p => {
+        const steps = Math.round((p.max - p.min) / p.step);
+        const n = Math.floor(Math.random() * (steps + 1));
+        state.values[p.key] = +(p.min + n * p.step).toFixed(4);
+      });
+      document.querySelectorAll("input[type=range]").forEach(inp => {
+        inp.value = state.values[inp.dataset.k];
+      });
+      paint();
+    });
+
+    renderUI();
+  </script>
 </body>
 </html>
